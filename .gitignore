@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+
+storage.db
+instance/
+uploads/
+test.txt
+
+.env
+*.key
