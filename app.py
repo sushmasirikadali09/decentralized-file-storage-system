@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for
 import os
 from models import db, User
 from werkzeug.security import generate_password_hash, check_password_hash
+from encryption import encrypt_file
 
 app = Flask(__name__)
 
@@ -23,7 +24,7 @@ def home():
     return render_template("index.html")
 
 
-# Login page
+# Login
 @app.route("/login", methods=["GET", "POST"])
 def login():
 
@@ -42,32 +43,13 @@ def login():
     return render_template("login.html")
 
 
-# Dashboard page
+# Dashboard
 @app.route("/dashboard")
 def dashboard():
     return render_template("dashboard.html")
-@app.route("/upload", methods=["GET", "POST"])
-def upload():
 
-    if request.method == "POST":
 
-        file = request.files["file"]
-
-        if file and file.filename:
-
-            upload_folder = "uploads"
-
-            os.makedirs(upload_folder, exist_ok=True)
-
-            file_path = os.path.join(upload_folder, file.filename)
-
-            file.save(file_path)
-
-            return "File uploaded successfully!"
-
-    return render_template("upload.html")
-
-# Register page
+# Register
 @app.route("/register", methods=["GET", "POST"])
 def register():
 
@@ -94,6 +76,49 @@ def register():
         return redirect(url_for("login"))
 
     return render_template("register.html")
+
+
+# Encrypted file upload
+@app.route("/upload", methods=["GET", "POST"])
+def upload():
+
+    if request.method == "POST":
+
+        file = request.files["file"]
+
+        if file and file.filename:
+
+            upload_folder = "uploads"
+
+            os.makedirs(upload_folder, exist_ok=True)
+
+            # Temporary original file
+            original_path = os.path.join(
+                upload_folder,
+                file.filename
+            )
+
+            # Encrypted file
+            encrypted_path = os.path.join(
+                upload_folder,
+                file.filename + ".enc"
+            )
+
+            # Save original temporarily
+            file.save(original_path)
+
+            # Encrypt the file
+            encrypt_file(
+                original_path,
+                encrypted_path
+            )
+
+            # Delete the original unencrypted file
+            os.remove(original_path)
+
+            return "File encrypted and uploaded successfully!"
+
+    return render_template("upload.html")
 
 
 # Start application
