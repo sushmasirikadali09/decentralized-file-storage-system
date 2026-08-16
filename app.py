@@ -1,8 +1,13 @@
 from flask import Flask, render_template, request, redirect, url_for
 import os
-from models import db, User
+
+from models import db, User, File
+
 from werkzeug.security import generate_password_hash, check_password_hash
+
 from encryption import encrypt_file
+from hashing import calculate_file_hash
+
 
 app = Flask(__name__)
 
@@ -12,6 +17,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Connect database to Flask
 db.init_app(app)
+
 
 # Create database tables
 with app.app_context():
@@ -78,7 +84,7 @@ def register():
     return render_template("register.html")
 
 
-# Encrypted file upload
+# Encrypted file upload with SHA-256 hash
 @app.route("/upload", methods=["GET", "POST"])
 def upload():
 
@@ -92,20 +98,22 @@ def upload():
 
             os.makedirs(upload_folder, exist_ok=True)
 
-            # Temporary original file
+            # File paths
             original_path = os.path.join(
                 upload_folder,
                 file.filename
             )
 
-            # Encrypted file
             encrypted_path = os.path.join(
                 upload_folder,
                 file.filename + ".enc"
             )
 
-            # Save original temporarily
+            # Save original file temporarily
             file.save(original_path)
+
+            # Calculate SHA-256 hash
+            file_hash = calculate_file_hash(original_path)
 
             # Encrypt the file
             encrypt_file(
@@ -113,10 +121,20 @@ def upload():
                 encrypted_path
             )
 
-            # Delete the original unencrypted file
+            # Delete original unencrypted file
             os.remove(original_path)
 
-            return "File encrypted and uploaded successfully!"
+            # Save file information in database
+            new_file = File(
+                original_filename=file.filename,
+                encrypted_filename=file.filename + ".enc",
+                file_hash=file_hash
+            )
+
+            db.session.add(new_file)
+            db.session.commit()
+
+            return "File encrypted, hashed, and uploaded successfully!"
 
     return render_template("upload.html")
 
