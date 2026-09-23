@@ -1,13 +1,22 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    send_file
+)
+
 import os
 
 from models import db, User, File
 
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
-from encryption import encrypt_file
+from encryption import encrypt_file, decrypt_file
 from hashing import calculate_file_hash
-from ipfs_upload import upload_to_ipfs
+from ipfs_upload import upload_to_ipfs, download_from_ipfs
 
 
 app = Flask(__name__)
@@ -45,7 +54,12 @@ def login():
         if user and check_password_hash(user.password, password):
             return redirect(url_for("dashboard"))
 
-        return "Invalid username or password!"
+        return render_template(
+            "result.html",
+            title="Login Failed",
+            heading="❌ Login Failed",
+            message="Invalid username or password."
+        )
 
     return render_template("login.html")
 
@@ -53,7 +67,15 @@ def login():
 # Dashboard
 @app.route("/dashboard")
 def dashboard():
-    return render_template("dashboard.html")
+
+    files = File.query.order_by(
+        File.uploaded_at.desc()
+    ).all()
+
+    return render_template(
+        "dashboard.html",
+        files=files
+    )
 
 
 # Register
@@ -65,10 +87,17 @@ def register():
         username = request.form["username"]
         password = request.form["password"]
 
-        existing_user = User.query.filter_by(username=username).first()
+        existing_user = User.query.filter_by(
+            username=username
+        ).first()
 
         if existing_user:
-            return "Username already exists!"
+            return render_template(
+                "result.html",
+                title="Registration Failed",
+                heading="❌ Username Already Exists",
+                message="Please choose another username."
+            )
 
         hashed_password = generate_password_hash(password)
 
@@ -80,12 +109,17 @@ def register():
         db.session.add(new_user)
         db.session.commit()
 
-        return redirect(url_for("login"))
+        return render_template(
+            "result.html",
+            title="Registration Successful",
+            heading="✅ Registration Successful",
+            message="Your account has been created successfully."
+        )
 
     return render_template("register.html")
 
 
-# Encrypted file upload with SHA-256 hash and IPFS
+# Upload encrypted file to IPFS
 @app.route("/upload", methods=["GET", "POST"])
 def upload():
 
@@ -97,41 +131,57 @@ def upload():
 
             upload_folder = "uploads"
 
-            os.makedirs(upload_folder, exist_ok=True)
+            os.makedirs(
+                upload_folder,
+                exist_ok=True
+            )
+
+            # Make filename safe
+            safe_filename = secure_filename(
+                file.filename
+            )
 
             # File paths
             original_path = os.path.join(
                 upload_folder,
-                file.filename
+                safe_filename
+            )
+
+            encrypted_filename = (
+                safe_filename + ".enc"
             )
 
             encrypted_path = os.path.join(
                 upload_folder,
-                file.filename + ".enc"
+                encrypted_filename
             )
 
             # Save original file temporarily
             file.save(original_path)
 
             # Calculate SHA-256 hash
-            file_hash = calculate_file_hash(original_path)
+            file_hash = calculate_file_hash(
+                original_path
+            )
 
-            # Encrypt the file
+            # Encrypt file
             encrypt_file(
                 original_path,
                 encrypted_path
             )
 
-            # Delete original unencrypted file
+            # Delete plaintext file
             os.remove(original_path)
 
             # Upload encrypted file to IPFS
-            cid = upload_to_ipfs(encrypted_path)
+            cid = upload_to_ipfs(
+                encrypted_path
+            )
 
-            # Save file information including CID
+            # Save file information in database
             new_file = File(
-                original_filename=file.filename,
-                encrypted_filename=file.filename + ".enc",
+                original_filename=safe_filename,
+                encrypted_filename=encrypted_filename,
                 file_hash=file_hash,
                 ipfs_cid=cid
             )
@@ -139,15 +189,116 @@ def upload():
             db.session.add(new_file)
             db.session.commit()
 
-            return (
-                "File encrypted, hashed, and uploaded to IPFS successfully!"
-                "<br><br>"
-                f"IPFS CID: {cid}"
-                "<br><br>"
-                "CID saved in database successfully!"
+            return render_template(
+                "result.html",
+                title="Upload Successful",
+                heading="✅ File Uploaded Successfully!",
+                message=(
+                    "Your file was encrypted, hashed, "
+                    "and uploaded to IPFS."
+                ),
+                cid=cid,
+                file_hash=file_hash
             )
 
+        return render_template(
+            "result.html",
+            title="Upload Failed",
+            heading="❌ Upload Failed",
+            message="Please select a file."
+        )
+
     return render_template("upload.html")
+
+
+# Download / Recover file from IPFS
+@app.route("/download/<int:file_id>")
+def download_file(file_id):
+
+    # Find file in database
+    stored_file = File.query.get_or_404(
+        file_id
+    )
+
+    # Recovery folder
+    recovery_folder = "recovered"
+
+    os.makedirs(
+        recovery_folder,
+        exist_ok=True
+    )
+
+    # Temporary encrypted file
+    encrypted_path = os.path.join(
+        recovery_folder,
+        stored_file.encrypted_filename
+    )
+
+    # Recovered original file
+    recovered_path = os.path.join(
+        recovery_folder,
+        stored_file.original_filename
+    )
+
+    try:
+
+        # Download encrypted file from IPFS
+        download_from_ipfs(
+            stored_file.ipfs_cid,
+            encrypted_path
+        )
+
+        # Decrypt
+        decrypt_file(
+            encrypted_path,
+            recovered_path
+        )
+
+        # Calculate recovered file hash
+        recovered_hash = calculate_file_hash(
+            recovered_path
+        )
+
+        # Verify file integrity
+        if recovered_hash != stored_file.file_hash:
+
+            if os.path.exists(encrypted_path):
+                os.remove(encrypted_path)
+
+            if os.path.exists(recovered_path):
+                os.remove(recovered_path)
+
+            return render_template(
+                "result.html",
+                title="Verification Failed",
+                heading="❌ File Verification Failed",
+                message=(
+                    "The recovered file does not match "
+                    "the original file."
+                )
+            )
+
+        # Send recovered file
+        return send_file(
+            recovered_path,
+            as_attachment=True,
+            download_name=stored_file.original_filename
+        )
+
+    except Exception as error:
+
+        if os.path.exists(encrypted_path):
+            os.remove(encrypted_path)
+
+        if os.path.exists(recovered_path):
+            os.remove(recovered_path)
+
+        return render_template(
+            "result.html",
+            title="Recovery Failed",
+            heading="❌ File Recovery Failed",
+            message=str(error)
+        )
 
 
 # Start application

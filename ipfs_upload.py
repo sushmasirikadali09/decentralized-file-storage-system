@@ -25,13 +25,25 @@ def upload_to_ipfs(file_path):
     return result["Hash"]
 
 
+def download_from_ipfs(cid, output_path):
+    """
+    Download a file from IPFS using its CID.
+    """
+
+    url = f"{IPFS_API}/cat"
+
+    response = requests.post(
+        url,
+        params={"arg": cid}
+    )
+
+    response.raise_for_status()
+
+    with open(output_path, "wb") as file:
+        file.write(response.content)
+
+    return output_path
+
+
 if __name__ == "__main__":
-    test_file = "ipfs_test.txt"
-
-    with open(test_file, "w") as file:
-        file.write("Hello from Decentralized File Storage!")
-
-    cid = upload_to_ipfs(test_file)
-
-    print("🎉 IPFS upload successful!")
-    print("CID:", cid)
+    print("IPFS upload/download module is ready.")
