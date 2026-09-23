@@ -1,7 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
-
 db = SQLAlchemy()
 
 
@@ -14,11 +13,25 @@ class User(db.Model):
 class File(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
-    original_filename = db.Column(db.String(255), nullable=False)
+    original_filename = db.Column(
+        db.String(255),
+        nullable=False
+    )
 
-    encrypted_filename = db.Column(db.String(255), nullable=False)
+    encrypted_filename = db.Column(
+        db.String(255),
+        nullable=False
+    )
 
-    file_hash = db.Column(db.String(64), nullable=False)
+    file_hash = db.Column(
+        db.String(64),
+        nullable=False
+    )
+
+    ipfs_cid = db.Column(
+        db.String(100),
+        nullable=True
+    )
 
     uploaded_at = db.Column(
         db.DateTime,

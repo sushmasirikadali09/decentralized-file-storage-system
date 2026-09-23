@@ -128,19 +128,23 @@ def upload():
             # Upload encrypted file to IPFS
             cid = upload_to_ipfs(encrypted_path)
 
-            # Save file information in database
+            # Save file information including CID
             new_file = File(
                 original_filename=file.filename,
                 encrypted_filename=file.filename + ".enc",
-                file_hash=file_hash
+                file_hash=file_hash,
+                ipfs_cid=cid
             )
 
             db.session.add(new_file)
             db.session.commit()
 
             return (
-                "File encrypted, hashed, and uploaded to IPFS successfully!<br><br>"
+                "File encrypted, hashed, and uploaded to IPFS successfully!"
+                "<br><br>"
                 f"IPFS CID: {cid}"
+                "<br><br>"
+                "CID saved in database successfully!"
             )
 
     return render_template("upload.html")
