@@ -7,6 +7,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from encryption import encrypt_file
 from hashing import calculate_file_hash
+from ipfs_upload import upload_to_ipfs
 
 
 app = Flask(__name__)
@@ -84,7 +85,7 @@ def register():
     return render_template("register.html")
 
 
-# Encrypted file upload with SHA-256 hash
+# Encrypted file upload with SHA-256 hash and IPFS
 @app.route("/upload", methods=["GET", "POST"])
 def upload():
 
@@ -124,6 +125,9 @@ def upload():
             # Delete original unencrypted file
             os.remove(original_path)
 
+            # Upload encrypted file to IPFS
+            cid = upload_to_ipfs(encrypted_path)
+
             # Save file information in database
             new_file = File(
                 original_filename=file.filename,
@@ -134,7 +138,10 @@ def upload():
             db.session.add(new_file)
             db.session.commit()
 
-            return "File encrypted, hashed, and uploaded successfully!"
+            return (
+                "File encrypted, hashed, and uploaded to IPFS successfully!<br><br>"
+                f"IPFS CID: {cid}"
+            )
 
     return render_template("upload.html")
 
